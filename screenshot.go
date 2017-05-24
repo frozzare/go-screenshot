@@ -111,8 +111,8 @@ func NewScreenshot(args ...*Options) *Screenshot {
 	return &Screenshot{o}
 }
 
-// Save saves a image.
-func (s *Screenshot) Save(args ...string) (string, error) {
+// Bytes will take a screenshot of a url and return it as bytes or a error.
+func (s *Screenshot) Bytes(args ...string) ([]byte, error) {
 	url := s.opts.URL
 
 	if len(args) > 0 && args[0] != "" {
@@ -140,7 +140,7 @@ func (s *Screenshot) Save(args ...string) (string, error) {
 		s.opts.Width,
 		s.opts.Height,
 		s.opts.Timeout,
-		s.opts.Format,
+		s.Format(),
 		fmt.Sprintf("%t", s.opts.Clip))
 
 	// Prepare command.
@@ -151,7 +151,7 @@ func (s *Screenshot) Save(args ...string) (string, error) {
 
 	// Execute command.
 	if err := cmd.Start(); err != nil {
-		return "", err
+		return []byte{}, err
 	}
 
 	// Wait for phantomjs do be done.
@@ -159,15 +159,52 @@ func (s *Screenshot) Save(args ...string) (string, error) {
 
 	// Return error if any.
 	if err := errb.String(); len(err) > 0 {
-		return "", errors.New(err)
+		return []byte{}, errors.New(err)
 	}
 
-	return s.saveImage(url, outb.String())
+	dat, err := base64.StdEncoding.DecodeString(outb.String())
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return dat, nil
 }
 
-// saveImage decode base64 output and saves it to a image.
-func (s *Screenshot) saveImage(url, out string) (string, error) {
-	data, err := base64.StdEncoding.DecodeString(out)
+// Format returns the image format.
+func (s *Screenshot) Format() string {
+	format := s.opts.Format
+	format = strings.ToLower(format)
+
+	if format == "jpeg" {
+		format = "jpg"
+	}
+
+	if format != "jpg" && format != "png" {
+		format = "png"
+	}
+
+	return format
+}
+
+// ContentType returns image content type.
+func (s *Screenshot) ContentType() string {
+	switch s.Format() {
+	case "jpg":
+		return "image/jpeg"
+	default:
+		return "image/png"
+	}
+}
+
+// Save saves a image.
+func (s *Screenshot) Save(args ...string) (string, error) {
+	url := s.opts.URL
+
+	if len(args) > 0 && args[0] != "" {
+		url = args[0]
+	}
+
+	bytes, err := s.Bytes(url)
 	if err != nil {
 		return "", err
 	}
@@ -177,7 +214,7 @@ func (s *Screenshot) saveImage(url, out string) (string, error) {
 		return "", err
 	}
 
-	file := fmt.Sprintf("%s.%s", u.Host, s.opts.Format)
+	file := fmt.Sprintf("%s.%s", u.Host, s.Format())
 
 	if len(s.opts.Dir) != 0 {
 		file = filepath.Join(s.opts.Dir, file)
@@ -190,7 +227,7 @@ func (s *Screenshot) saveImage(url, out string) (string, error) {
 		file = filepath.Join(path, file)
 	}
 
-	if err := ioutil.WriteFile(file, data, 0644); err != nil {
+	if err := ioutil.WriteFile(file, bytes, 0644); err != nil {
 		return "", err
 	}
 
