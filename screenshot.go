@@ -11,11 +11,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// ErrUnableToLoad is the error that are return when it can't load the url.
+var ErrUnableToLoad = errors.New("Unable to load")
 
 // Phantomjs script.
 var script = `var webpage = require('webpage');
-var args = require('system').args;
 var noop = function () {};
 var url = '%s';
 var width = %d;
@@ -24,6 +27,7 @@ var timeout = %d;
 var format = '%s';
 var clip = '%s';
 var page = webpage.create();
+page.settings.resourceTimeout = timeout;
 page.viewportSize = {
 	width: width,
 	height: height
@@ -40,17 +44,24 @@ page.onConfirm =
 page.onPrompt =
 page.onError = noop;
 
+page.onResourceTimeout = function(e) {
+	console.error('Unable to load');
+	phantom.exit();
+};
+
 page.open(url, function (status) {
 	if (status !== 'success') {
 		console.error('Unable to load');
 		phantom.exit();
 	}
+
 	window.setTimeout(function () {
 		page.evaluate(function () {
 			if (!document.body.style.background) {
 				document.body.style.backgroundColor = 'white';
 			}
 		});
+
 		console.log(page.renderBase64(format));
 		phantom.exit();
 	}, timeout);
@@ -71,7 +82,7 @@ type Options struct {
 	IgnoreSSLErrors bool   // Ignore SSL errors. Default false.
 	Dir             string // Directory to save the image in.
 	SSLProtocol     string // SSLProtocol. Default "sslv3".
-	Timeout         int    // Timeout. Default 0.
+	Timeout         int    // Timeout. Default 5000 (5s).
 	URL             string // URL to save screenshot from.
 	Width           int    // Image width. Default 1024.
 }
@@ -108,6 +119,10 @@ func NewScreenshot(args ...*Options) *Screenshot {
 		o.PhantomjsBin = "phantomjs"
 	}
 
+	if o.Timeout == 0 {
+		o.Timeout = 5000
+	}
+
 	return &Screenshot{o}
 }
 
@@ -134,8 +149,8 @@ func (s *Screenshot) Bytes(args ...string) ([]byte, error) {
 		parts = append(parts, "--ssl-protocol="+s.opts.SSLProtocol)
 	}
 
-	// Prepare script.
-	script = fmt.Sprintf(script,
+	// Prepare stdin script.
+	stdin := fmt.Sprintf(script,
 		url,
 		s.opts.Width,
 		s.opts.Height,
@@ -145,7 +160,7 @@ func (s *Screenshot) Bytes(args ...string) ([]byte, error) {
 
 	// Prepare command.
 	cmd := exec.Command(s.opts.PhantomjsBin, parts...)
-	cmd.Stdin = strings.NewReader(script)
+	cmd.Stdin = strings.NewReader(stdin)
 	cmd.Stdout = &outb
 	cmd.Stderr = &errb
 
@@ -154,12 +169,25 @@ func (s *Screenshot) Bytes(args ...string) ([]byte, error) {
 		return []byte{}, err
 	}
 
-	// Wait for phantomjs do be done.
-	cmd.Wait()
+	// Wait for phantomjs do be done or kill cmd process after 15s.
+	timer := time.AfterFunc(time.Duration(s.opts.Timeout*2)*time.Millisecond, func() {
+		cmd.Process.Kill()
+	})
+	err := cmd.Wait()
+	timer.Stop()
+
+	if err != nil {
+		return []byte{}, ErrUnableToLoad
+	}
 
 	// Return error if any.
 	if err := errb.String(); len(err) > 0 {
-		return []byte{}, errors.New(err)
+		return []byte{}, ErrUnableToLoad
+	}
+
+	// Bail if we can't load the url.
+	if strings.Contains(strings.ToLower(outb.String()), "unable to load") {
+		return []byte{}, ErrUnableToLoad
 	}
 
 	dat, err := base64.StdEncoding.DecodeString(outb.String())
