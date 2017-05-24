@@ -24,10 +24,10 @@ import (
 
 func main() {
 	s := screenshot.NewScreenshot(&screenshot.Options{
-		URL: "http://google.com",
+		URL: "https://google.com",
 	})
 
-	file, err := s.Save() // or s.Save("http://google.com")
+	file, err := s.Save() // or s.Save("https://google.com")
 	if err != nil {
 		log.Fatal(err)
 	}
