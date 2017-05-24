@@ -4,6 +4,8 @@ Go package for capturing screenshots of websites in various resolutions. It uses
 
 ## Installation
 
+First you will need to install phantomjs then you can run `go get`
+
 ```
 go get github.com/frozzare/go-screenshot
 ```
@@ -17,7 +19,7 @@ import (
 	"fmt"
 	"log"
 
-	screenshot "github.com/frozzare/go-screenshot"
+    "github.com/frozzare/go-screenshot"
 )
 
 func main() {
