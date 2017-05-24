@@ -32,6 +32,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+    // Path to image.
 	fmt.Println(file)
 }
 ```

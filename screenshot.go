@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	gourl "net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -180,6 +181,13 @@ func (s *Screenshot) saveImage(url, out string) (string, error) {
 
 	if len(s.opts.Dir) != 0 {
 		file = filepath.Join(s.opts.Dir, file)
+	} else {
+		path, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+
+		file = filepath.Join(path, file)
 	}
 
 	if err := ioutil.WriteFile(file, data, 0644); err != nil {
