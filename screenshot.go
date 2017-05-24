@@ -64,13 +64,13 @@ type Screenshot struct {
 
 // Options is the screenshot options.
 type Options struct {
-	PhantomjsBin    string // Path to phantomjs binary.
+	PhantomjsBin    string // Path to phantomjs binary. Default is "phantomjs".
 	Clip            bool   // Clip rectangle. Default false.
-	Format          string // Image format. Can be jpg, gif or png.
+	Format          string // Image format. Can be jpg, gif or png. Default is "png".
 	Height          int    // Image height. Default 768.
 	IgnoreSSLErrors bool   // Ignore SSL errors. Default false.
 	Dir             string // Directory to save the image in.
-	SSLProtocol     string // SSLProtocol. Default sslv3.
+	SSLProtocol     string // SSLProtocol. Default "sslv3".
 	Timeout         int    // Timeout. Default 0.
 	URL             string // URL to save screenshot from.
 	Width           int    // Image width. Default 1024.
