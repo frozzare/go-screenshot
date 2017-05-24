@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"log"
 
-    "github.com/frozzare/go-screenshot"
+	"github.com/frozzare/go-screenshot"
 )
 
 func main() {
