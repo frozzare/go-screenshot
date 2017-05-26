@@ -2,6 +2,7 @@ package screenshot
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -45,13 +46,13 @@ page.onPrompt =
 page.onError = noop;
 
 page.onResourceTimeout = function(e) {
-	console.error('Unable to load');
+	console.error('unable to load');
 	phantom.exit();
 };
 
 page.open(url, function (status) {
 	if (status !== 'success') {
-		console.error('Unable to load');
+		console.error('unable to load');
 		phantom.exit();
 	}
 
@@ -75,16 +76,17 @@ type Screenshot struct {
 
 // Options is the screenshot options.
 type Options struct {
-	PhantomjsBin    string // Path to phantomjs binary. Default is "phantomjs".
-	Clip            bool   // Clip rectangle. Default false.
-	Format          string // Image format. Can be jpg, gif or png. Default is "png".
-	Height          int    // Image height. Default 768.
-	IgnoreSSLErrors bool   // Ignore SSL errors. Default false.
-	Dir             string // Directory to save the image in.
-	SSLProtocol     string // SSLProtocol. Default "sslv3".
-	Timeout         int    // Timeout. Default 5000 (5s).
-	URL             string // URL to save screenshot from.
-	Width           int    // Image width. Default 1024.
+	CacheTime       time.Time // Time to cache the images (e.g time.Now().Add(1 * time.Hour)). Default is zero.
+	PhantomjsBin    string    // Path to phantomjs binary. Default is "phantomjs".
+	Clip            bool      // Clip rectangle. Default false.
+	Format          string    // Image format. Can be jpg, gif or png. Default is "png".
+	Height          int       // Image height. Default 768.
+	IgnoreSSLErrors bool      // Ignore SSL errors. Default false.
+	Dir             string    // Directory to save the image in.
+	SSLProtocol     string    // SSLProtocol. Default "sslv3".
+	Timeout         int       // Timeout. Default 5000 (5s).
+	URL             string    // URL to save screenshot from.
+	Width           int       // Image width. Default 1024.
 }
 
 // NewScreenshot creates a new screenshot struct with default options.
@@ -128,11 +130,11 @@ func NewScreenshot(args ...*Options) *Screenshot {
 
 // Bytes will take a screenshot of a url and return it as bytes or a error.
 func (s *Screenshot) Bytes(args ...string) ([]byte, error) {
-	url := s.opts.URL
-
-	if len(args) > 0 && args[0] != "" {
-		url = args[0]
+	if bytes := s.cached(args...); len(bytes) > 0 {
+		return bytes, nil
 	}
+
+	url := s.url(args...)
 
 	var outb, errb bytes.Buffer
 
@@ -186,7 +188,7 @@ func (s *Screenshot) Bytes(args ...string) ([]byte, error) {
 	}
 
 	// Bail if we can't load the url.
-	if strings.Contains(strings.ToLower(outb.String()), "unable to load") {
+	if strings.Contains(outb.String(), "unable to load") {
 		return []byte{}, ErrUnableToLoad
 	}
 
@@ -196,6 +198,33 @@ func (s *Screenshot) Bytes(args ...string) ([]byte, error) {
 	}
 
 	return dat, nil
+}
+
+// cached will determine if the url is cached already.
+func (s *Screenshot) cached(args ...string) []byte {
+	path := s.path(args...)
+
+	if path == "" {
+		return []byte{}
+	}
+
+	stat, err := os.Stat(path)
+
+	if os.IsNotExist(err) {
+		return []byte{}
+	}
+
+	if stat != nil && !stat.ModTime().Before(s.opts.CacheTime) {
+		os.Remove(path)
+		return []byte{}
+	}
+
+	bytes, err := ioutil.ReadFile(path)
+	if err != nil {
+		return []byte{}
+	}
+
+	return bytes
 }
 
 // Format returns the image format.
@@ -224,40 +253,56 @@ func (s *Screenshot) ContentType() string {
 	}
 }
 
+// path will return the image name path.
+func (s *Screenshot) path(args ...string) string {
+	url := s.url(args...)
+
+	u, err := gourl.Parse(url)
+	if err != nil {
+		return ""
+	}
+
+	file := fmt.Sprintf("%s-%x.%s", u.Host, md5.Sum([]byte(url)), s.Format())
+
+	if len(s.opts.Dir) != 0 {
+		return filepath.Join(s.opts.Dir, file)
+	}
+
+	path, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	return filepath.Join(path, file)
+}
+
 // Save saves a image.
 func (s *Screenshot) Save(args ...string) (string, error) {
+	bytes, err := s.Bytes(args...)
+	if err != nil {
+		return "", err
+	}
+
+	path := s.path(args...)
+
+	if path == "" {
+		return path, errors.New("Cannot create filename")
+	}
+
+	if err := ioutil.WriteFile(path, bytes, 0644); err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
+// url will return the url that should be used.
+func (s *Screenshot) url(args ...string) string {
 	url := s.opts.URL
 
 	if len(args) > 0 && args[0] != "" {
 		url = args[0]
 	}
 
-	bytes, err := s.Bytes(url)
-	if err != nil {
-		return "", err
-	}
-
-	u, err := gourl.Parse(url)
-	if err != nil {
-		return "", err
-	}
-
-	file := fmt.Sprintf("%s.%s", u.Host, s.Format())
-
-	if len(s.opts.Dir) != 0 {
-		file = filepath.Join(s.opts.Dir, file)
-	} else {
-		path, err := os.Getwd()
-		if err != nil {
-			return "", err
-		}
-
-		file = filepath.Join(path, file)
-	}
-
-	if err := ioutil.WriteFile(file, bytes, 0644); err != nil {
-		return "", err
-	}
-
-	return file, nil
+	return url
 }
